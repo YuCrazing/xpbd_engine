@@ -10,6 +10,11 @@ A XPBD simulation framework.
 
 ## Building && Running
 
+Clean Build:
+```bash
+./build_linux.sh --clean
+```
+
 Build:
 ```bash
 ./build_linux.sh
