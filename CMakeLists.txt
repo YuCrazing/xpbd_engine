@@ -5,7 +5,7 @@ project(xpbd_engine)
 find_package(assimp CONFIG REQUIRED)
 
 # Include packages from vcpkg
-include_directories(${PACKAGE_PREFIX_DIR}/include)
+# include_directories(${PACKAGE_PREFIX_DIR}/include)
 
 add_executable(xpbd_engine main.cpp)
 target_link_libraries(xpbd_engine PRIVATE assimp::assimp)
