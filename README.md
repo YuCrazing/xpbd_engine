@@ -5,12 +5,13 @@ A XPBD simulation framework.
 ## Setting up Environment
 
 ```bash
+git submodule update --init --recursive
 ./third_party/vcpkg/bootstrap-vcpkg.sh
 ```
 
 ## Building && Running
 
-Clean Build:
+Clean up:
 ```bash
 ./build_linux.sh --clean
 ```
@@ -22,5 +23,5 @@ Build:
 
 Run:
 ```bash
-./build/linux/xpbd_engine
+./build/xpbd_engine
 ```
