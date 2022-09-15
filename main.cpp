@@ -4,6 +4,8 @@
 #include <assimp/scene.h>           // Output data structure
 #include <assimp/postprocess.h>     // Post processing flags
 
+#include <glm/common.hpp>
+
 #include <chrono>
 #include <iostream>
 #include <signal.h>
@@ -36,63 +38,72 @@ const std::vector<uint32_t> MAT3_SHAPE = {3, 3};
 
 #define NR_PARTICLES 8000
 
-#include <unistd.h>
-
 constexpr int SUBSTEPS = 5;
 
 
 
 
-void scene_traverse(aiNode* cur_node, const aiScene* scene){
+void scene_traverse(aiNode* cur_node, const aiScene* scene, std::vector<glm::vec3>& vbo, std::vector<unsigned int>& ibo) {
     if (cur_node->mNumMeshes > 0) {
         static int mesh_count = 0;
         for(int i = 0; i < cur_node->mNumMeshes; ++i) {
             auto mesh_id = cur_node->mMeshes[i];
             auto* mesh = scene->mMeshes[mesh_id];
-            std::cout << "mesh " << mesh_count << ": vn: " << mesh->mNumVertices << "; in: " << mesh->mNumFaces << std::endl;
+            std::cout << "mesh " << mesh_count << ": vn: " << mesh->mNumVertices << "; fn: " << mesh->mNumFaces << std::endl;
+            for(int vi = 0; vi < mesh->mNumVertices; ++vi){
+                vbo.push_back(glm::vec3(mesh->mVertices[vi].x, mesh->mVertices[vi].y, mesh->mVertices[vi].z));
+                std::cout << vi << " " << glm::to_string(vbo[vbo.size()-1]) << std::endl;
+            }
+            for(int fi = 0; fi < mesh->mNumFaces; ++fi) {
+                for(int jj = 0; jj < mesh->mFaces[fi].mNumIndices; ++jj) {
+                    ibo.push_back(mesh->mFaces[fi].mIndices[jj]);
+                    std::cout << ibo[ibo.size()-1] << " ";
+                }
+                std::cout << std::endl;
+            }
             ++mesh_count;
         }
     }
     if(cur_node->mNumChildren > 0){
         for(int i = 0; i < cur_node->mNumChildren; ++i){
-            scene_traverse(cur_node->mChildren[i], scene);
+            scene_traverse(cur_node->mChildren[i], scene, vbo, ibo);
         }
     }
 }
 
-bool TestImporting( const std::string& pFile)
+bool import_scene(const std::string& pFile, std::vector<glm::vec3>& vbo, std::vector<unsigned int>& ibo)
 {
-  // Create an instance of the Importer class
-  Assimp::Importer importer;
-  // And have it read the given file with some example postprocessing
-  // Usually - if speed is not the most important aspect for you - you'll 
-  // propably to request more postprocessing than we do in this example.
-  const aiScene* scene = importer.ReadFile( pFile, 
-        // aiProcess_CalcTangentSpace       | 
-        aiProcess_Triangulate            |
-        aiProcess_JoinIdenticalVertices  |
-        aiProcess_SortByPType);
-  
-  // If the import failed, report it
-  if( !scene)
-  {
-    std::cout << ( importer.GetErrorString()) << std::endl;
-    return false;
-  }
+    // Create an instance of the Importer class
+    Assimp::Importer importer;
+    // And have it read the given file with some example postprocessing
+    // Usually - if speed is not the most important aspect for you - you'll 
+    // propably to request more postprocessing than we do in this example.
+    const aiScene* scene = importer.ReadFile( pFile, 
+            // aiProcess_CalcTangentSpace       | 
+            aiProcess_Triangulate            |
+            aiProcess_JoinIdenticalVertices  |
+            aiProcess_SortByPType);
+    
+    // If the import failed, report it
+    if( !scene)
+    {
+        std::cout << ( importer.GetErrorString()) << std::endl;
+        return false;
+    }
 
-  scene_traverse(scene->mRootNode, scene);
+    scene_traverse(scene->mRootNode, scene, vbo, ibo);
 
-  return true;
+    return true;
 }
 
 
-#define MAKETIDATA_WITHVALUE_FLOAT(runtime_, value_name)                                       \
-value_name = TiAotNdArray::Make(runtime_,                                             \
-                                    TiDataType::TI_DATA_TYPE_F32,                       \
-                                    {static_cast<uint32_t>(tmp_##value_name.size())},   \
-                                    NONE_SHAPE);                                       \
-TiAotNdArray::LoadDataFromHost<float>(value_name, tmp_##value_name);                 \
-// ti_name_arges[#value_name] = BindTiNameArgs(#value_name, value_name)                 \
+// #define MAKETIDATA_WITHVALUE_FLOAT(runtime_, value_name)                                       \
+// value_name = TiAotNdArray::Make(runtime_,                                             \
+//                                     TiDataType::TI_DATA_TYPE_F32,                       \
+//                                     {static_cast<uint32_t>(tmp_##value_name.size())},   \
+//                                     NONE_SHAPE);                                       \
+// TiAotNdArray::LoadDataFromHost<float>(value_name, tmp_##value_name);                 \
+// // ti_name_arges[#value_name] = BindTiNameArgs(#value_name, value_name)                 \
 
 
 void run(TiArch arch, const std::string& folder_dir, const std::string& package_path) {
@@ -114,7 +125,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
     // Create a GGUI configuration
     taichi::ui::AppConfig app_config;
-    app_config.name         = "SPH";
+    app_config.name         = "Taichi show";
     app_config.width        = win_width;
     app_config.height       = win_height;
     app_config.vsync        = true;
@@ -133,7 +144,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
     // Load Aot and Kernel
     TiAotModule aot_mod = ti_load_aot_module(runtime, folder_dir.c_str());
-    
+
     // TiKernel k_initialize = ti_get_aot_module_kernel(aot_mod, "initialize");
     // TiKernel k_initialize_particle = ti_get_aot_module_kernel(aot_mod, "initialize_particle");
     // TiKernel k_update_density = ti_get_aot_module_kernel(aot_mod, "update_density");
@@ -144,7 +155,43 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
     const std::vector<int> shape_1d = {NR_PARTICLES};
     const std::vector<int> vec3_shape = {3};
-    
+
+    std::vector<glm::vec3> vbo_host;
+    std::vector<unsigned int> ibo_host;
+    // import_scene("/home/yuzhang/Work/xpbd_engine/data/Collision_lowmesh3.obj", vbo_host, ibo_host);
+    import_scene("/home/yuzhang/Work/xpbd_engine/data/box.obj", vbo_host, ibo_host);
+    std::cout << "vn" << vbo_host.size() << " in:" << ibo_host.size() << std::endl;
+
+    capi::utils::TiNdarrayAndMem vbo, ibo;
+    taichi::lang::DeviceAllocation vbo_devalloc, ibo_devalloc;
+    vbo = capi::utils::make_ndarray(runtime,
+                        TiDataType::TI_DATA_TYPE_F32,
+                        (std::vector<int> {vbo_host.size()}).data(), 1,
+                        vec3_shape.data(), 1,
+                        false /*host_read*/, false /*host_write*/
+                        );
+    vbo_devalloc = get_devalloc(vbo.runtime_, vbo.memory_);
+    ibo = capi::utils::make_ndarray(runtime,
+                        TiDataType::TI_DATA_TYPE_I32,
+                        (std::vector<int> {ibo_host.size()}).data(), 1,
+                        nullptr, 0,
+                        false /*host_read*/, false /*host_write*/
+                        );
+    ibo_devalloc = get_devalloc(ibo.runtime_,ibo.memory_);
+
+    float *dst_vbo = (float *)ti_map_memory(vbo.runtime_, vbo.memory_);
+    if (dst_vbo != nullptr) {
+        std::memcpy(dst_vbo, vbo_host.data(), vbo_host.size() * sizeof(glm::vec3));
+        for(int i = 0; i < vbo_host.size() * 3; ++i) {
+            std::cout << dst_vbo[i] << std::endl;
+        }
+    }
+    ti_unmap_memory(vbo.runtime_, vbo.memory_);
+    int *dst_ibo = (int *)ti_map_memory(ibo.runtime_, ibo.memory_);
+    if (dst_ibo != nullptr) {
+        std::memcpy(dst_ibo, ibo_host.data(), ibo_host.size() * sizeof(int));
+    }
+    ti_unmap_memory(ibo.runtime_, ibo.memory_);
     // auto N_ = capi::utils::make_ndarray(runtime,
     //                        TiDataType::TI_DATA_TYPE_I32,
     //                        shape_1d.data(), 1,
@@ -304,10 +351,42 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     particles.radius = 0.01f;
     particles.object_id = 0;
 
-    // taichi::ui::MeshInfo meshes;
-    // meshes.renderable_info = renderable_info;
-    // meshes.color = glm::vec3(0.3, 0.5, 0.8);
-    // meshes.object_id = 0;
+
+    taichi::ui::FieldInfo vbo_info_0;
+    vbo_info_0.valid        = true;
+    vbo_info_0.field_type   = taichi::ui::FieldType::Matrix;
+    vbo_info_0.matrix_rows  = 3;
+    vbo_info_0.matrix_cols  = 1;
+    vbo_info_0.shape        = {vbo_host.size()};
+    vbo_info_0.field_source = get_field_source(arch);
+    vbo_info_0.dtype        = taichi::lang::PrimitiveType::f32;
+    vbo_info_0.snode        = nullptr;
+    vbo_info_0.dev_alloc    = vbo_devalloc;
+    taichi::ui::FieldInfo ibo_info_0;
+    ibo_info_0.valid        = true;
+    ibo_info_0.field_type   = taichi::ui::FieldType::Scalar;
+    ibo_info_0.matrix_rows  = 1;
+    ibo_info_0.matrix_cols  = 1;
+    ibo_info_0.shape        = {ibo_host.size()};
+    ibo_info_0.field_source = get_field_source(arch);
+    ibo_info_0.dtype        = taichi::lang::PrimitiveType::i32;
+    ibo_info_0.snode        = nullptr;
+    ibo_info_0.dev_alloc    = ibo_devalloc;
+    taichi::ui::RenderableInfo renderable_info_0;
+    renderable_info_0.vbo = vbo_info_0;
+    // renderable_info_0.indices = ibo_info_0;
+    renderable_info_0.has_user_customized_draw = false;
+    renderable_info_0.has_per_vertex_color = false;
+    taichi::ui::MeshInfo meshes;
+    meshes.renderable_info = renderable_info_0;
+    meshes.color = glm::vec3(0.3, 0.5, 0.8);
+    meshes.object_id = 0;
+    taichi::ui::ParticlesInfo vertices;
+    vertices.renderable_info = renderable_info_0;
+    vertices.color = glm::vec3(0.9, 0.5, 0.8);
+    vertices.radius = 0.1f;
+    vertices.object_id = 1;
+
 
     auto camera = std::make_unique<taichi::ui::Camera>();
     camera->position = glm::vec3(0.0, 1.5, 1.5);
@@ -333,6 +412,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
         scene->point_light(glm::vec3(2.0, 2.0, 2.0), glm::vec3(1.0, 1.0, 1.0));
         scene->particles(particles);
         // scene->mesh(meshes);
+        scene->particles(vertices);
 
         renderer->scene(scene.get());
 
@@ -349,7 +429,6 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 }
 
 int main(int argc, char *argv[]) {
-    // TestImporting("./data/Collision_lowmesh3.obj");
     assert(argc == 4);
     std::string aot_path = argv[1];
     std::string package_path = argv[2];
