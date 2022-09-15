@@ -182,9 +182,9 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     float *dst_vbo = (float *)ti_map_memory(vbo.runtime_, vbo.memory_);
     if (dst_vbo != nullptr) {
         std::memcpy(dst_vbo, vbo_host.data(), vbo_host.size() * sizeof(glm::vec3));
-        for(int i = 0; i < vbo_host.size() * 3; ++i) {
-            std::cout << dst_vbo[i] << std::endl;
-        }
+        // for(int i = 0; i < vbo_host.size() * 3; ++i) {
+        //     std::cout << dst_vbo[i] << std::endl;
+        // }
     }
     ti_unmap_memory(vbo.runtime_, vbo.memory_);
     int *dst_ibo = (int *)ti_map_memory(ibo.runtime_, ibo.memory_);
@@ -415,6 +415,15 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
         scene->particles(vertices);
 
         renderer->scene(scene.get());
+
+        float *dst_vbo = (float *)ti_map_memory(vbo.runtime_, vbo.memory_);
+        if (dst_vbo != nullptr) {
+            std::memcpy(dst_vbo, vbo_host.data(), vbo_host.size() * sizeof(glm::vec3));
+            for(int i = 0; i < vbo_host.size(); ++i) {
+                std::cout << 3*i << " " << dst_vbo[3*i] << " " << dst_vbo[3*i+1] << " " << dst_vbo[3*i+2] << std::endl;
+            }
+        }
+        ti_unmap_memory(vbo.runtime_, vbo.memory_);
 
         // Render elements
         renderer->draw_frame(gui.get());
