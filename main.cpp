@@ -23,6 +23,15 @@
 #include "taichi/ui/backends/vulkan/canvas.h"
 #include "glm/gtx/string_cast.hpp"
 #include "utils.hpp"
+#include <taichi/cpp/taichi.hpp>
+
+
+
+const std::vector<uint32_t> NONE_SHAPE = {};
+const std::vector<uint32_t> VEC2_SHAPE = {2};
+const std::vector<uint32_t> VEC3_SHAPE = {3};
+const std::vector<uint32_t> MAT2_SHAPE = {2, 2};
+const std::vector<uint32_t> MAT3_SHAPE = {3, 3};
 
 
 #define NR_PARTICLES 8000
@@ -76,7 +85,18 @@ bool TestImporting( const std::string& pFile)
   return true;
 }
 
+
+#define MAKETIDATA_WITHVALUE_FLOAT(runtime_, value_name)                                       \
+value_name = TiAotNdArray::Make(runtime_,                                             \
+                                    TiDataType::TI_DATA_TYPE_F32,                       \
+                                    {static_cast<uint32_t>(tmp_##value_name.size())},   \
+                                    NONE_SHAPE);                                       \
+TiAotNdArray::LoadDataFromHost<float>(value_name, tmp_##value_name);                 \
+// ti_name_arges[#value_name] = BindTiNameArgs(#value_name, value_name)                 \
+
+
 void run(TiArch arch, const std::string& folder_dir, const std::string& package_path) {
+
     /* --------------------- */
     /* Render Initialization */
     /* --------------------- */
@@ -120,7 +140,8 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     // TiKernel k_update_force = ti_get_aot_module_kernel(aot_mod, "update_force");
     // TiKernel k_advance = ti_get_aot_module_kernel(aot_mod, "advance");
     // TiKernel k_boundary_handle = ti_get_aot_module_kernel(aot_mod, "boundary_handle");
-   
+    TiKernel k_particle_fall = ti_get_aot_module_kernel(aot_mod, "particle_fall");
+
     const std::vector<int> shape_1d = {NR_PARTICLES};
     const std::vector<int> vec3_shape = {3};
     
@@ -174,12 +195,14 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     //                          false/*host_read*/,
     //                          false/*host_write*/);
 
+
+
     capi::utils::TiNdarrayAndMem pos_;
     taichi::lang::DeviceAllocation pos_devalloc;
     if(arch == TiArch::TI_ARCH_VULKAN) {
         taichi::lang::vulkan::VulkanDevice *device = &(renderer->app_context().device());
         pos_devalloc = get_ndarray_with_imported_memory(runtime, TiDataType::TI_DATA_TYPE_F32, shape_1d, vec3_shape, device, pos_);
-        
+
     } else {
         pos_ = capi::utils::make_ndarray(runtime,
                             TiDataType::TI_DATA_TYPE_F32,
@@ -190,13 +213,20 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
         pos_devalloc = get_devalloc(pos_.runtime_, pos_.memory_);
     }
 
+
     std::vector<float> pos_host;
-    for(size_t i = 0; i < shape_1d; ++i){
-        pos_host.push_back(i*1.0f);
-        pos_host.push_back(i*1.0f);
-        pos_host.push_back(i*1.0f);
+    for(size_t i = 0; i < NR_PARTICLES; ++i) {
+        pos_host.push_back(i*1.0f * 0.01);
+        pos_host.push_back(i*1.0f * 0.01);
+        pos_host.push_back(i*1.0f * 0.01);
     }
-    ti_memcpy(pos_devalloc, &pos_host[0], sizeof(float)*pos_host.size(), &(renderer->app_context()))
+
+    float *dst = (float *)ti_map_memory(pos_.runtime_, pos_.memory_);
+    if (dst != nullptr) {
+        std::memcpy(dst, pos_host.data(), pos_host.size() * sizeof(float));
+    }
+    ti_unmap_memory(pos_.runtime_, pos_.memory_);
+
 
     // TiArgument k_initialize_args[3];
     // TiArgument k_initialize_particle_args[4];
@@ -204,6 +234,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     // TiArgument k_update_force_args[6];
     // TiArgument k_advance_args[3];
     // TiArgument k_boundary_handle_args[3];
+    TiArgument k_particle_fall_args[1];
 
     // k_initialize_args[0] = boundary_box_.arg_;
     // k_initialize_args[1] = spawn_box_.arg_;
@@ -232,6 +263,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     // k_boundary_handle_args[0] = pos_.arg_;
     // k_boundary_handle_args[1] = vel_.arg_;
     // k_boundary_handle_args[2] = boundary_box_.arg_;
+    k_particle_fall_args[0] = pos_.arg_;
 
     /* --------------------- */
     /* Kernel Initialization */
@@ -292,6 +324,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
         //     ti_launch_kernel(runtime, k_advance, 3, &k_advance_args[0]);
         //     ti_launch_kernel(runtime, k_boundary_handle, 3, &k_boundary_handle_args[0]);
         // }
+        ti_launch_kernel(runtime, k_particle_fall, 1, &k_particle_fall_args[0]);
         ti_wait(runtime);
 
         handle_user_inputs(camera.get(), window, win_width, win_height);

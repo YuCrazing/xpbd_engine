@@ -29,6 +29,13 @@ AOT_DIRECTORY="/tmp/aot_files"
 RUNTIME_LIB="${TAICHI_REPO}/python/taichi/_lib/runtime"
 PACKAGE_PATH="${TAICHI_REPO}/python/taichi"
 
+# Export kernels
+rm -rf ${AOT_DIRECTORY}
+mkdir -p ${AOT_DIRECTORY}
+python3 kernels.py --dir=${AOT_DIRECTORY} --arch=${BACKEND_NAME}
+
+
+# Build project
 mkdir build
 cd build
 
@@ -38,5 +45,10 @@ cmake .. -DVCPKG_TARGET_TRIPLET=x64-linux \
   -DCMAKE_BUILD_TYPE=Debug
 
 make -j
+if [ $? -eq 0 ]; then
+  echo "TI_LIB_DIR=${RUNTIME_LIB} ./xpbd_engine ${AOT_DIRECTORY} ${PACKAGE_PATH} ${BACKEND_NAME}"
+  TI_LIB_DIR=${RUNTIME_LIB} ./xpbd_engine ${AOT_DIRECTORY} ${PACKAGE_PATH} ${BACKEND_NAME}
+else
+    echo "Building fails!!"
+fi
 
-TI_LIB_DIR=${RUNTIME_LIB} ./xpbd_engine ${AOT_DIRECTORY} ${PACKAGE_PATH} ${BACKEND_NAME}
