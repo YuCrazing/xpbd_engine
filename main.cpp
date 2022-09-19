@@ -125,7 +125,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
     // Create a GGUI configuration
     taichi::ui::AppConfig app_config;
-    app_config.name         = "Taichi show";
+    app_config.name         = "TaichiShow";
     app_config.width        = win_width;
     app_config.height       = win_height;
     app_config.vsync        = true;
@@ -152,46 +152,65 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     // TiKernel k_advance = ti_get_aot_module_kernel(aot_mod, "advance");
     // TiKernel k_boundary_handle = ti_get_aot_module_kernel(aot_mod, "boundary_handle");
     TiKernel k_particle_fall = ti_get_aot_module_kernel(aot_mod, "particle_fall");
+    TiKernel k_initialize_particles = ti_get_aot_module_kernel(aot_mod, "initialize_particles");
+    TiKernel k_data_copy = ti_get_aot_module_kernel(aot_mod, "data_copy");
 
     const std::vector<int> shape_1d = {NR_PARTICLES};
     const std::vector<int> vec3_shape = {3};
 
     std::vector<glm::vec3> vbo_host;
     std::vector<unsigned int> ibo_host;
-    // import_scene("/home/yuzhang/Work/xpbd_engine/data/Collision_lowmesh3.obj", vbo_host, ibo_host);
-    import_scene("/home/yuzhang/Work/xpbd_engine/data/box.obj", vbo_host, ibo_host);
-    std::cout << "vn" << vbo_host.size() << " in:" << ibo_host.size() << std::endl;
+    import_scene("/home/yuzhang/Work/xpbd_engine/data/Collision_lowmesh3.obj", vbo_host, ibo_host);
 
-    capi::utils::TiNdarrayAndMem vbo, ibo;
-    taichi::lang::DeviceAllocation vbo_devalloc, ibo_devalloc;
-    vbo = capi::utils::make_ndarray(runtime,
-                        TiDataType::TI_DATA_TYPE_F32,
-                        (std::vector<int> {vbo_host.size()}).data(), 1,
-                        vec3_shape.data(), 1,
-                        false /*host_read*/, false /*host_write*/
-                        );
-    vbo_devalloc = get_devalloc(vbo.runtime_, vbo.memory_);
+
+    std::cout << "vn: " << vbo_host.size() << " in: " << ibo_host.size() << std::endl;
+
+    capi::utils::TiNdarrayAndMem vbo, ibo, vbo_for_rendering;
+    taichi::lang::DeviceAllocation vbo_devalloc, ibo_devalloc, vbo_for_rendering_devalloc;
+    const std::vector<int> shape_vbo = {vbo_host.size()};
+
+    if (arch == TiArch::TI_ARCH_VULKAN) {
+        // taichi::lang::vulkan::VulkanDevice *device = &(renderer->app_context().device());
+        // vbo_devalloc = get_ndarray_with_imported_memory(runtime, TiDataType::TI_DATA_TYPE_F32, shape_vbo, vec3_shape, device, vbo);
+        assert(0);
+    } else {
+        vbo = capi::utils::make_ndarray(runtime,
+                            TiDataType::TI_DATA_TYPE_F32,
+                            shape_vbo.data(), 1,
+                            vec3_shape.data(), 1,
+                            false /*host_read*/, false /*host_write*/
+                            );
+        vbo_devalloc = get_devalloc(vbo.runtime_, vbo.memory_);
+        vbo_for_rendering = capi::utils::make_ndarray(runtime,
+                    TiDataType::TI_DATA_TYPE_F32,
+                    shape_vbo.data(), 1,
+                    (std::vector<int>{12}).data(), 1,
+                    false /*host_read*/, false /*host_write*/
+                    );
+        vbo_for_rendering_devalloc = get_devalloc(vbo_for_rendering.runtime_, vbo_for_rendering.memory_);
+    }
+
+
     ibo = capi::utils::make_ndarray(runtime,
                         TiDataType::TI_DATA_TYPE_I32,
                         (std::vector<int> {ibo_host.size()}).data(), 1,
                         nullptr, 0,
-                        false /*host_read*/, false /*host_write*/
+                        true /*host_read*/, true /*host_write*/
                         );
     ibo_devalloc = get_devalloc(ibo.runtime_,ibo.memory_);
 
     float *dst_vbo = (float *)ti_map_memory(vbo.runtime_, vbo.memory_);
     if (dst_vbo != nullptr) {
         std::memcpy(dst_vbo, vbo_host.data(), vbo_host.size() * sizeof(glm::vec3));
-        // for(int i = 0; i < vbo_host.size() * 3; ++i) {
-        //     std::cout << dst_vbo[i] << std::endl;
-        // }
     }
     ti_unmap_memory(vbo.runtime_, vbo.memory_);
+
     int *dst_ibo = (int *)ti_map_memory(ibo.runtime_, ibo.memory_);
     if (dst_ibo != nullptr) {
         std::memcpy(dst_ibo, ibo_host.data(), ibo_host.size() * sizeof(int));
     }
     ti_unmap_memory(ibo.runtime_, ibo.memory_);
+
     // auto N_ = capi::utils::make_ndarray(runtime,
     //                        TiDataType::TI_DATA_TYPE_I32,
     //                        shape_1d.data(), 1,
@@ -244,35 +263,35 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
 
 
-    capi::utils::TiNdarrayAndMem pos_;
-    taichi::lang::DeviceAllocation pos_devalloc;
-    if(arch == TiArch::TI_ARCH_VULKAN) {
-        taichi::lang::vulkan::VulkanDevice *device = &(renderer->app_context().device());
-        pos_devalloc = get_ndarray_with_imported_memory(runtime, TiDataType::TI_DATA_TYPE_F32, shape_1d, vec3_shape, device, pos_);
+    // capi::utils::TiNdarrayAndMem pos_;
+    // taichi::lang::DeviceAllocation pos_devalloc;
+    // if(arch == TiArch::TI_ARCH_VULKAN) {
+    //     taichi::lang::vulkan::VulkanDevice *device = &(renderer->app_context().device());
+    //     pos_devalloc = get_ndarray_with_imported_memory(runtime, TiDataType::TI_DATA_TYPE_F32, shape_1d, vec3_shape, device, pos_);
 
-    } else {
-        pos_ = capi::utils::make_ndarray(runtime,
-                            TiDataType::TI_DATA_TYPE_F32,
-                            shape_1d.data(), 1,
-                            vec3_shape.data(), 1,
-                            false /*host_read*/, false /*host_write*/
-                            );
-        pos_devalloc = get_devalloc(pos_.runtime_, pos_.memory_);
-    }
+    // } else {
+    //     pos_ = capi::utils::make_ndarray(runtime,
+    //                         TiDataType::TI_DATA_TYPE_F32,
+    //                         shape_1d.data(), 1,
+    //                         vec3_shape.data(), 1,
+    //                         false /*host_read*/, false /*host_write*/
+    //                         );
+    //     pos_devalloc = get_devalloc(pos_.runtime_, pos_.memory_);
+    // }
 
 
-    std::vector<float> pos_host;
-    for(size_t i = 0; i < NR_PARTICLES; ++i) {
-        pos_host.push_back(i*1.0f * 0.01);
-        pos_host.push_back(i*1.0f * 0.01);
-        pos_host.push_back(i*1.0f * 0.01);
-    }
+    // std::vector<float> pos_host;
+    // for(size_t i = 0; i < NR_PARTICLES; ++i) {
+    //     pos_host.push_back(i*1.0f * 0.01);
+    //     pos_host.push_back(i*1.0f * 0.01);
+    //     pos_host.push_back(i*1.0f * 0.01);
+    // }
 
-    float *dst = (float *)ti_map_memory(pos_.runtime_, pos_.memory_);
-    if (dst != nullptr) {
-        std::memcpy(dst, pos_host.data(), pos_host.size() * sizeof(float));
-    }
-    ti_unmap_memory(pos_.runtime_, pos_.memory_);
+    // float *dst = (float *)ti_map_memory(pos_.runtime_, pos_.memory_);
+    // if (dst != nullptr) {
+    //     std::memcpy(dst, pos_host.data(), pos_host.size() * sizeof(float));
+    // }
+    // ti_unmap_memory(pos_.runtime_, pos_.memory_);
 
 
     // TiArgument k_initialize_args[3];
@@ -282,6 +301,8 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     // TiArgument k_advance_args[3];
     // TiArgument k_boundary_handle_args[3];
     TiArgument k_particle_fall_args[1];
+    TiArgument k_initialize_particles_args[1];
+    TiArgument k_data_copy_args[2];
 
     // k_initialize_args[0] = boundary_box_.arg_;
     // k_initialize_args[1] = spawn_box_.arg_;
@@ -310,7 +331,11 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     // k_boundary_handle_args[0] = pos_.arg_;
     // k_boundary_handle_args[1] = vel_.arg_;
     // k_boundary_handle_args[2] = boundary_box_.arg_;
-    k_particle_fall_args[0] = pos_.arg_;
+    k_particle_fall_args[0] = vbo.arg_;
+    k_initialize_particles_args[0] = vbo.arg_;
+    k_data_copy_args[0] = vbo_for_rendering.arg_;
+    k_data_copy_args[1] = vbo.arg_;
+    k_data_copy_args[2] = ibo.arg_;
 
     /* --------------------- */
     /* Kernel Initialization */
@@ -324,44 +349,31 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     /* -------------- */
     auto gui = std::make_shared<taichi::ui::vulkan::Gui>(&renderer->app_context(), &renderer->swap_chain(), window);
 
-    // Describe information to render the circle with Vulkan
-    taichi::ui::FieldInfo f_info;
-    f_info.valid        = true;
-    f_info.field_type   = taichi::ui::FieldType::Scalar;
-    f_info.matrix_rows  = 1;
-    f_info.matrix_cols  = 1;
-    f_info.shape        = {NR_PARTICLES};
-    f_info.field_source = get_field_source(arch);
-    f_info.dtype        = taichi::lang::PrimitiveType::f32;
-    f_info.snode        = nullptr;
-    f_info.dev_alloc    = pos_devalloc;
-
     renderer->set_background_color({0.6, 0.6, 0.6});
 
     auto scene = std::make_unique<taichi::ui::vulkan::Scene>();
 
-    taichi::ui::RenderableInfo renderable_info;
-    renderable_info.vbo = f_info;
-    renderable_info.has_user_customized_draw = false;
-    renderable_info.has_per_vertex_color = false;
+    // taichi::ui::RenderableInfo renderable_info;
+    // renderable_info.vbo = f_info;
+    // renderable_info.has_user_customized_draw = false;
+    // renderable_info.has_per_vertex_color = false;
 
-    taichi::ui::ParticlesInfo particles;
-    particles.renderable_info = renderable_info;
-    particles.color = glm::vec3(0.3, 0.5, 0.8);
-    particles.radius = 0.01f;
-    particles.object_id = 0;
-
+    // taichi::ui::ParticlesInfo particles;
+    // particles.renderable_info = renderable_info;
+    // particles.color = glm::vec3(0.3, 0.5, 0.8);
+    // particles.radius = 0.01f;
+    // particles.object_id = 0;
 
     taichi::ui::FieldInfo vbo_info_0;
     vbo_info_0.valid        = true;
     vbo_info_0.field_type   = taichi::ui::FieldType::Matrix;
-    vbo_info_0.matrix_rows  = 3;
+    vbo_info_0.matrix_rows  = 12;
     vbo_info_0.matrix_cols  = 1;
     vbo_info_0.shape        = {vbo_host.size()};
     vbo_info_0.field_source = get_field_source(arch);
     vbo_info_0.dtype        = taichi::lang::PrimitiveType::f32;
     vbo_info_0.snode        = nullptr;
-    vbo_info_0.dev_alloc    = vbo_devalloc;
+    vbo_info_0.dev_alloc    = vbo_for_rendering_devalloc;
     taichi::ui::FieldInfo ibo_info_0;
     ibo_info_0.valid        = true;
     ibo_info_0.field_type   = taichi::ui::FieldType::Scalar;
@@ -374,7 +386,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     ibo_info_0.dev_alloc    = ibo_devalloc;
     taichi::ui::RenderableInfo renderable_info_0;
     renderable_info_0.vbo = vbo_info_0;
-    // renderable_info_0.indices = ibo_info_0;
+    renderable_info_0.indices = ibo_info_0;
     renderable_info_0.has_user_customized_draw = false;
     renderable_info_0.has_per_vertex_color = false;
     taichi::ui::MeshInfo meshes;
@@ -385,7 +397,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     vertices.renderable_info = renderable_info_0;
     vertices.color = glm::vec3(0.9, 0.5, 0.8);
     vertices.radius = 0.1f;
-    vertices.object_id = 1;
+    vertices.object_id = 0;
 
 
     auto camera = std::make_unique<taichi::ui::Camera>();
@@ -393,6 +405,8 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     camera->lookat = glm::vec3(0.0, 0.0, 0.0);
     camera->up = glm::vec3(0.0, 1.0, 0);
 
+
+    // ti_launch_kernel(runtime, k_initialize_particles, 1, &k_initialize_particles_args[0]);
     /* --------------------- */
     /* Execution & Rendering */
     /* --------------------- */
@@ -403,27 +417,19 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
         //     ti_launch_kernel(runtime, k_advance, 3, &k_advance_args[0]);
         //     ti_launch_kernel(runtime, k_boundary_handle, 3, &k_boundary_handle_args[0]);
         // }
+
         ti_launch_kernel(runtime, k_particle_fall, 1, &k_particle_fall_args[0]);
+        ti_launch_kernel(runtime, k_data_copy, 3, &k_data_copy_args[0]);
         ti_wait(runtime);
 
         handle_user_inputs(camera.get(), window, win_width, win_height);
 
         scene->set_camera(*camera);
         scene->point_light(glm::vec3(2.0, 2.0, 2.0), glm::vec3(1.0, 1.0, 1.0));
-        scene->particles(particles);
-        // scene->mesh(meshes);
-        scene->particles(vertices);
+        scene->mesh(meshes);
+        // scene->particles(vertices);
 
         renderer->scene(scene.get());
-
-        float *dst_vbo = (float *)ti_map_memory(vbo.runtime_, vbo.memory_);
-        if (dst_vbo != nullptr) {
-            std::memcpy(dst_vbo, vbo_host.data(), vbo_host.size() * sizeof(glm::vec3));
-            for(int i = 0; i < vbo_host.size(); ++i) {
-                std::cout << 3*i << " " << dst_vbo[3*i] << " " << dst_vbo[3*i+1] << " " << dst_vbo[3*i+2] << std::endl;
-            }
-        }
-        ti_unmap_memory(vbo.runtime_, vbo.memory_);
 
         // Render elements
         renderer->draw_frame(gui.get());

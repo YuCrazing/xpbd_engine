@@ -187,7 +187,41 @@ def copy_data_from_ndarray_to_field(src: ti.template(), dst: ti.any_arr()):
 @ti.kernel
 def particle_fall(pos: ti.any_arr(field_dim=1)):
     for I in pos:
-        pos[I] += ti.Vector([0.0, -0.0001, 0.0])
+        pos[I] += ti.Vector([0.0, -0.001, 0.0])
+        # print(I, pos[I])
+
+
+@ti.kernel
+def initialize_particles(pos: ti.any_arr(field_dim=1)):
+    print("buffer size: ", pos.shape[0], pos[0].n, pos[0].m)
+    # pass
+    for I in pos:
+        pos[I] = ti.Vector([1.0, 0.0, 0.0])
+        # print(I, pos[I])
+
+@ti.kernel
+def data_copy(vbo_for_rendering: ti.any_arr(field_dim=1), vbo: ti.any_arr(field_dim=1), ibo: ti.any_arr(field_dim=1)):
+    for I in vbo:
+        for j in ti.static(range(3)):
+            vbo_for_rendering[I][j] = vbo[I][j]
+
+    for i in range(ibo.shape[0]//3):
+        ind_a = ibo[3*i]
+        ind_b = ibo[3*i+1]
+        ind_c = ibo[3*i+2]
+        n = (vbo[ind_b]-vbo[ind_a]).cross(vbo[ind_c]-vbo[ind_a]).normalized()
+
+        for j in ti.static(range(3)):
+            vbo_for_rendering[ind_a][3+j] += n[j]
+            vbo_for_rendering[ind_b][3+j] += n[j]
+            vbo_for_rendering[ind_c][3+j] += n[j]
+    
+    for I in vbo_for_rendering:
+        n = ti.Vector([vbo_for_rendering[I][3], vbo_for_rendering[I][4], vbo_for_rendering[I][5]])
+        n = n.normalized()
+        for j in ti.static(range(3)):
+            vbo_for_rendering[I][3+j] = n[j]
+
 
 if __name__ == "__main__":
     # Initialize arrays
@@ -199,6 +233,8 @@ if __name__ == "__main__":
     spawn_box.from_numpy(spawn_box_np)
 
     pos = ti.Vector.ndarray(3, ti.f32, shape=particle_num)
+    vbo = ti.Vector.ndarray(12, ti.f32, shape=particle_num)
+    ibo = ti.ndarray(ti.i32, shape=particle_num)
     vel = ti.Vector.ndarray(3, ti.f32, shape=particle_num)
     acc = ti.Vector.ndarray(3, ti.f32, shape=particle_num)
     den = ti.ndarray(ti.f32, shape=particle_num)
@@ -217,5 +253,7 @@ if __name__ == "__main__":
     mod.add_kernel(advance,             template_args={'pos':pos, 'vel':vel, 'acc':acc})
     mod.add_kernel(boundary_handle,     template_args={'pos':pos, 'vel':vel, 'boundary_box':boundary_box})
     mod.add_kernel(particle_fall,       template_args={'pos':pos})
+    mod.add_kernel(initialize_particles,       template_args={'pos':pos})
+    mod.add_kernel(data_copy,       template_args={'vbo_for_rendering':vbo, 'vbo': pos, 'ibo': ibo})
 
     mod.save(args.dir, '')
