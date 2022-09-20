@@ -2,8 +2,7 @@ import argparse
 from attr import field
 import taichi as ti
 import numpy as np
-import math
-import tempfile
+from pbd_globals import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dir", type=str)
@@ -42,42 +41,7 @@ substeps = 5
 dt = 0.016 / substeps
 eps = 1e-6
 damping = 0.5
-pi = math.pi
 
-
-@ti.func
-def W_poly6(R, h):
-    r = R.norm()
-    res = 0.0
-    if r <= h:
-        h2 = h * h
-        h4 = h2 * h2
-        h9 = h4 * h4 * h
-        h2_r2 = h2 - r * r
-        res = 315.0 / (64 * pi * h9) * h2_r2 * h2_r2 * h2_r2
-    else:
-        res = 0.0
-    return res
-
-
-@ti.func
-def W_spiky_gradient(R, h):
-    r = R.norm()
-    res = ti.Vector([0.0, 0.0, 0.0])
-    if r == 0.0:
-        res = ti.Vector([0.0, 0.0, 0.0])
-    elif r <= h:
-        h3 = h * h * h
-        h6 = h3 * h3
-        h_r = h - r
-        res = -45.0 / (pi * h6) * h_r * h_r * (R / r)
-    else:
-        res = ti.Vector([0.0, 0.0, 0.0])
-    return res
-
-
-W = W_poly6
-W_gradient = W_spiky_gradient
 
 @ti.kernel
 def initialize(boundary_box: ti.any_arr(field_dim=1), spawn_box: ti.any_arr(field_dim=1), N: ti.any_arr(field_dim=1)):

@@ -49,17 +49,14 @@ void scene_traverse(aiNode* cur_node, const aiScene* scene, std::vector<glm::vec
         for(int i = 0; i < cur_node->mNumMeshes; ++i) {
             auto mesh_id = cur_node->mMeshes[i];
             auto* mesh = scene->mMeshes[mesh_id];
-            std::cout << "mesh " << mesh_count << ": vn: " << mesh->mNumVertices << "; fn: " << mesh->mNumFaces << std::endl;
+            // std::cout << "mesh " << mesh_count << ": vn: " << mesh->mNumVertices << "; fn: " << mesh->mNumFaces << std::endl;
             for(int vi = 0; vi < mesh->mNumVertices; ++vi){
                 vbo.push_back(glm::vec3(mesh->mVertices[vi].x, mesh->mVertices[vi].y, mesh->mVertices[vi].z));
-                std::cout << vi << " " << glm::to_string(vbo[vbo.size()-1]) << std::endl;
             }
             for(int fi = 0; fi < mesh->mNumFaces; ++fi) {
                 for(int jj = 0; jj < mesh->mFaces[fi].mNumIndices; ++jj) {
                     ibo.push_back(mesh->mFaces[fi].mIndices[jj]);
-                    std::cout << ibo[ibo.size()-1] << " ";
                 }
-                std::cout << std::endl;
             }
             ++mesh_count;
         }
@@ -163,7 +160,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     import_scene("/home/yuzhang/Work/xpbd_engine/data/Collision_lowmesh3.obj", vbo_host, ibo_host);
 
 
-    std::cout << "vn: " << vbo_host.size() << " in: " << ibo_host.size() << std::endl;
+    // std::cout << "vn: " << vbo_host.size() << " in: " << ibo_host.size() << std::endl;
 
     capi::utils::TiNdarrayAndMem vbo, ibo, vbo_for_rendering;
     taichi::lang::DeviceAllocation vbo_devalloc, ibo_devalloc, vbo_for_rendering_devalloc;
