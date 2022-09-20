@@ -26,6 +26,7 @@
 #include "glm/gtx/string_cast.hpp"
 #include "utils.hpp"
 #include <taichi/cpp/taichi.hpp>
+#include "voxelizer.hpp"
 
 
 
