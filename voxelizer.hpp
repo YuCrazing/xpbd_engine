@@ -1,33 +1,50 @@
+#include <glm/common.hpp>
+
 #include <unordered_set>
 
+// struct int2_key {
+//     int x, y;
+//     int2_key(int x, int y): x(x), y(y) {}
+//     bool operator < (const int2_key& t) const {
+//         return x < t.x && y < t.y;
+//     }
+//     bool operator == (const int2_key& t) const {
+//         return x == t.x && y == t.y;
+//     }
+// };
 
-bool operator<(const glm::ivec2& a, const glm::ivec2& b) {
-    return a.x<b.x&&a.y<b.y;
-}
 
-bool operator<(const glm::ivec3& a, const glm::ivec3& b) {
-    return a.x<b.x&&a.y<b.y&&a.z<b.z;
-}
+// struct int3_key {
+//     int x, y, z;
+//     int3_key(int x, int y, int z): x(x), y(y), z(z) {}
+//     bool operator < (const int3_key& t) const {
+//         return x < t.x && y < t.y && z < t.z;
+//     }
+// };
 
-bool operator==(const glm::ivec2& a, const glm::ivec2& b) {
-    return a.x==b.x&&a.y==b.y;
-}
-
-bool operator==(const glm::ivec3& a, const glm::ivec3& b) {
-    return a.x==b.x&&a.y==b.y&&a.z==b.z;
+namespace std {
+    template<>
+    class hash <glm::ivec2> {
+        public:
+        size_t operator()(const glm::ivec2& t) const {
+            return hash<int>()(t.x) ^ hash<int>()(t.y);
+        }
+    };
+    template<>
+    class hash <glm::ivec3> {
+        public:
+        size_t operator()(const glm::vec3& t) const {
+            return hash<int>()(t.x) ^ hash<int>()(t.y) ^ hash<int>()(t.z);
+        }
+    };
 }
 
 
 class Voxelizer {
-    float pitch = 0.0f;
-    float mx_edge_len = 0.0f;
-    bool fill = false;
-    glm::vec3 bound[2] = {};
 
-    std::vector<glm::vec3> vertices{};
-    std::vector<unsigned int> indices{};
+public:
 
-    Voxelizer(const std::vector<glm::vec3>& vertices, const std::vector<unsigned int>& indices, float pitch, bool fill): vertices(vertices), indices(indices), pitch(pitch), fill(fill) {
+    Voxelizer(const std::vector<glm::vec3>& vertices, const std::vector<unsigned int>& indices, bool fill): vertices(vertices), indices(indices), fill(fill) {
         mx_edge_len = 0.0f;
         for(size_t i = 0; i < indices.size() / 3; ++i) {
             auto ind_a = indices[3*i];
@@ -44,7 +61,7 @@ class Voxelizer {
     }
 
     bool check_watertight() {
-        std::unordered_map<glm::ivec2> edge_map;
+        std::unordered_map<glm::ivec2, int> edge_map;
         for(size_t i = 0; i < indices.size() / 3; ++i) {
             auto ind_a = indices[3*i];
             auto ind_b = indices[3*i+1];
@@ -63,7 +80,7 @@ class Voxelizer {
             }
         }
         for(auto& it : edge_map) {
-            if(it->second != 2){
+            if(it.second != 2){
                 return false;
             }
         }
@@ -72,14 +89,51 @@ class Voxelizer {
 
     void calc_bound() {
         float inf = 1e30;
-        bound[0] = glm::vec3(-inf, -inf, -inf);
-        bound[1] = glm::vec3(inf, inf, inf);
+        bound[0] = glm::vec3(inf, inf, inf);
+        bound[1] = glm::vec3(-inf, -inf, -inf);
         for(auto& v : vertices) {
             bound[0] = glm::min(bound[0], v);
             bound[1] = glm::max(bound[1], v);
         }
     }
 
+    void voxelize(float pitch_, std::vector<glm::vec3>& cell_positions) {
+
+        this->pitch = pitch_;
+        subdivide();
+
+        std::cout << "subdivision finished. " << "vn: " << vertices.size() << ", in: " << indices.size() << std::endl;
+
+        std::unordered_set<glm::ivec3> occupied_cells;
+        for(size_t i = 0; i < indices.size() / 3; ++i) {
+            auto ind_a = indices[3*i];
+            auto ind_b = indices[3*i+1];
+            auto ind_c = indices[3*i+2];
+            auto a = vertices[ind_a];
+            auto b = vertices[ind_b];
+            auto c = vertices[ind_c];
+            occupied_cells.insert(get_cell_id(a));
+            occupied_cells.insert(get_cell_id(b));
+            occupied_cells.insert(get_cell_id(c));
+            occupied_cells.insert(get_cell_id((a+b+c)/3.0f));
+        }
+
+        std::cout << "occupied cells: " << occupied_cells.size() << std::endl;
+
+        // std::vector<glm::vec3> cell_positions;
+        cell_positions.clear();
+        int cnt = 0;
+        for(const auto& cid : occupied_cells) {
+            cnt ++;
+            cell_positions.push_back(get_cell_center_pos(cid));
+        }
+        std::cout << "cnt: " << cnt << std::endl;
+
+        // return cell_positions;
+
+    }
+
+private:
     void subdivide() {
 
         if(mx_edge_len < pitch) {
@@ -102,16 +156,16 @@ class Voxelizer {
                 auto a = cur_vertices[ind_a];
                 auto b = cur_vertices[ind_b];
                 auto c = cur_vertices[ind_c];
-                auto new_a = 0.5 * (b+c);
-                auto new_b = 0.5 * (c+a);
-                auto new_c = 0.5 * (a+b);
+                auto new_a = 0.5f * (b+c);
+                auto new_b = 0.5f * (c+a);
+                auto new_c = 0.5f * (a+b);
                 vertices.push_back(new_a);
                 vertices.push_back(new_b);
                 vertices.push_back(new_c);
-                int ind_new_a = vertices.size()-3;
-                int ind_new_b = vertices.size()-2;
-                int ind_new_c = vertices.size()-1;
-
+                auto ind_new_a = vertices.size() - 3;
+                auto ind_new_b = vertices.size() - 2;
+                auto ind_new_c = vertices.size() - 1;
+                
                 // Add new face [new_a, new_b, new_c], also remove original face [a, b, c]
                 indices[3*i] = ind_new_a;
                 indices[3*i+1] = ind_new_b;
@@ -142,6 +196,7 @@ class Voxelizer {
                 cur_mx_edge_len = std::max(cur_mx_edge_len, glm::length(new_b-new_c));
                 cur_mx_edge_len = std::max(cur_mx_edge_len, glm::length(new_c-new_a));
             }
+            std::cout << "max edge: " << cur_mx_edge_len << std::endl;
         }
 
         mx_edge_len = cur_mx_edge_len;
@@ -151,36 +206,24 @@ class Voxelizer {
     }
 
     glm::ivec3 get_cell_id(glm::vec3 pos) {
-        return glm::ivec3((pos-bound[0])/pitch);
+        auto cid = glm::ivec3((pos-bound[0])/pitch);
+        // std::cout << "pos: " << glm::to_string(pos) << ", cid: " << glm::to_string(cid) << std::endl;
+        return cid;
     }
-    
+
     glm::vec3 get_cell_center_pos(glm::ivec3 cell_id) {
-        return bound[0] + cell_id * pitch;
+        return bound[0] + glm::vec3(cell_id) * pitch;
     }
 
-    std::vector<glm::vec3> voxelize(float pitch_) {
+public:
+    glm::vec3 bound[2] = {};
 
-        this->pitch = pitch_;
-        subdivide();
+private:
+    float pitch = 0.0f;
+    float mx_edge_len = 0.0f;
+    bool fill = false;
 
-        std::unordered_set<glm::ivec3> occupied_cells;
-        for(size_t i = 0; i < indices.size() / 3; ++i) {
-            auto ind_a = indices[3*i];
-            auto ind_b = indices[3*i+1];
-            auto ind_c = indices[3*i+2];
-            auto a = vertices[ind_a];
-            auto b = vertices[ind_b];
-            auto c = vertices[ind_c];
-            occupied_cells.insert(get_cell_id(a));
-            occupied_cells.insert(get_cell_id(b));
-            occupied_cells.insert(get_cell_id(c));
-            occupied_cells.insert(get_cell_id((a+b+c)/3));
-        }
+    std::vector<glm::vec3> vertices{};
+    std::vector<unsigned int> indices{};
 
-        std::vector<glm::vec3> cell_positions;
-        for(const auto& cid : occupied_cells) {
-            cell_positions.push_back(get_cell_center_pos(cid));
-        }
-
-    }
 };

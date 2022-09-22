@@ -160,6 +160,14 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     std::vector<unsigned int> ibo_host;
     import_scene("/home/yuzhang/Work/xpbd_engine/data/Collision_lowmesh3.obj", vbo_host, ibo_host);
 
+    auto voxelizer = Voxelizer(vbo_host, ibo_host, false);
+    std::cout << "watertight: " << voxelizer.check_watertight() << std::endl;
+    std::cout << "bounds: " << glm::to_string(voxelizer.bound[0]) << ", " << glm::to_string(voxelizer.bound[1]) << std::endl;
+
+    voxelizer.voxelize(0.7, vbo_host);
+    // std::vector voxels_tmp;
+    // vbo_host = voxels;
+
 
     // std::cout << "vn: " << vbo_host.size() << " in: " << ibo_host.size() << std::endl;
 
@@ -199,7 +207,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
     float *dst_vbo = (float *)ti_map_memory(vbo.runtime_, vbo.memory_);
     if (dst_vbo != nullptr) {
-        std::memcpy(dst_vbo, vbo_host.data(), vbo_host.size() * sizeof(glm::vec3));
+        std::memcpy(dst_vbo, &vbo_host[0], vbo_host.size() * sizeof(glm::vec3));
     }
     ti_unmap_memory(vbo.runtime_, vbo.memory_);
 
@@ -384,7 +392,7 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
     ibo_info_0.dev_alloc    = ibo_devalloc;
     taichi::ui::RenderableInfo renderable_info_0;
     renderable_info_0.vbo = vbo_info_0;
-    renderable_info_0.indices = ibo_info_0;
+    // renderable_info_0.indices = ibo_info_0;
     renderable_info_0.has_user_customized_draw = false;
     renderable_info_0.has_per_vertex_color = false;
     taichi::ui::MeshInfo meshes;
@@ -424,8 +432,8 @@ void run(TiArch arch, const std::string& folder_dir, const std::string& package_
 
         scene->set_camera(*camera);
         scene->point_light(glm::vec3(2.0, 2.0, 2.0), glm::vec3(1.0, 1.0, 1.0));
-        scene->mesh(meshes);
-        // scene->particles(vertices);
+        // scene->mesh(meshes);
+        scene->particles(vertices);
 
         renderer->scene(scene.get());
 
